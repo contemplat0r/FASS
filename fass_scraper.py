@@ -7,7 +7,15 @@ import codecs
 from copy import deepcopy
 import requests
 import csv
+import itertools
+import functools
+
 from htmlutils import get_all_same_type_nodes, generate_attrib_getter, node_list_processor
+
+
+def layer_processor(pages_generator, single_page_processor, compound_function):
+    first_page_processing_result =  single_page_processor(pages_generator.next())
+    return reduce(lambda result, page: compound_function(result, single_page_processor(page)), pages_generator, first_page_processing_result)
 
 
 class HTTProcessor(object):
@@ -19,9 +27,13 @@ class HTTProcessor(object):
         self._response = None
         self._last_exception = None
         self._response = None
+        self._timeout = None
 
     def set_headers(self, headers):
         self._headers = headers
+
+    def set_timeout(self, timeout):
+        self._timeout = timeout
 
     def prepare_request(self, command, data):
         pass
@@ -43,7 +55,6 @@ class HTTProcessor(object):
             self._response = response
             self._status = response.status_code
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.HTTPError, httplib.IncompleteRead, requests.exceptions.MissingSchema) as exception:
-        #except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, httplib.IncompleteRead, requests.exceptions.MissingSchema) as exception: #HTTPError processed as status code
                                                         
             print 'send_request: ' + url + '  Exception: ' + str(exception) + '\n'
             self._last_exception = exception
@@ -112,6 +123,7 @@ if __name__ == '__main__':
             'Cache-Control' : 'max-age=0'
             }
     site_url = 'http://www.fass.se'
+    base_url = 'http://www.fass.se/LIF'
     first_layer_url = 'http://www.fass.se/LIF/pharmaceuticalliststart?userType=2'
     second_layer_url_static_part = 'http://www.fass.se/LIF/pharmaceuticallist?userType=2&page='
     third_layer_url_static_part = 'http://www.fass.se/LIF/product?userType=2&'
@@ -192,15 +204,17 @@ if __name__ == '__main__':
     '''
 
     http_processor = HTTProcessor(headers=headers)
+
     content = http_processor.send_request(site_url, 'text')
-    #print content.encode('utf-8')
-    print 'zero layer status code: ',  http_processor.get_status()
-    content = http_processor.send_request(first_layer_url, 'text')
-    print 'first layer status code: ', http_processor.get_status()
-    #print content.encode('utf-8')
+
     get_href_attrib = generate_attrib_getter('href')
+    second_layer_url_maker = lambda link_node: base_url + get_href_attrib(link_node)[1:]
+    content = http_processor.send_request(first_layer_url, 'text')
     second_layer_link_nodes = get_all_same_type_nodes(content, first_layer_info_container_xpath)
-    result_list = node_list_processor(second_layer_link_nodes, get_href_attrib)
-    for item in result_list:
-        print item
+    second_layer_urls = node_list_processor(second_layer_link_nodes, second_layer_url_maker)
+    for second_layer_url in second_layer_urls[:3]:
+        print second_layer_url
+        content = http_processor.send_request(second_layer_url, 'text')
+        #print content
+
     
