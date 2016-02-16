@@ -112,6 +112,38 @@ def get_content(url, headers={'User-Agent' : 'requests'}, post_data=None, except
     return content
 
 
+get_href_attrib = generate_attrib_getter('href')
+next_layer_url_maker = lambda link_node: base_url + get_href_attrib(link_node)[1:]
+
+
+def generate_second_layer_info_processor(second_layer_trade_name_xpath, second_layer_product_description_text_xpath, next_layer_link_xpath):
+    def second_layer_info_processor(product_description):
+        product_name = product_description.xpath(second_layer_trade_name_xpath)
+        print product_name[0].text.encode('utf-8')
+        #product_description_dict['Produkt'] = product_name[0].text.encode('utf-8')
+        product_description_text_container = product_description.xpath(second_layer_product_description_text_xpath)
+        product_description_text_subcontainer = product_description_text_container[0]
+        #print 'product_description_text_subcontainer: ', product_description_text_subcontainer
+        child_list = product_description_text_subcontainer.getchildren()
+        product_description_text = ''
+        if child_list == []:
+            product_description_text = product_description_text_subcontainer.text
+        else:
+            product_description_text = child_list[0].tail
+
+        if product_description_text != '' and product_description_text.find(', ') != -1:
+            product_description_text = product_description_text[product_description_text.find(', ') + 2:]
+
+        print 'product_description_text: ', product_description_text
+        #product_description_dict['Beredningsform Styrka'] = product_description_text.encode('utf-8')
+        product_links_nodes = product_description.xpath(next_layer_link_xpath)
+        product_links = node_list_processor(product_links_nodes, next_layer_url_maker)
+        for link in product_links:
+            print link
+
+    return second_layer_info_processor
+
+
 if __name__ == '__main__':
 
 
@@ -207,14 +239,19 @@ if __name__ == '__main__':
 
     content = http_processor.send_request(site_url, 'text')
 
-    get_href_attrib = generate_attrib_getter('href')
-    second_layer_url_maker = lambda link_node: base_url + get_href_attrib(link_node)[1:]
     content = http_processor.send_request(first_layer_url, 'text')
     second_layer_link_nodes = get_all_same_type_nodes(content, first_layer_info_container_xpath)
-    second_layer_urls = node_list_processor(second_layer_link_nodes, second_layer_url_maker)
+    second_layer_urls = node_list_processor(second_layer_link_nodes, next_layer_url_maker)
+
+    second_layer_info_processor = generate_second_layer_info_processor(second_layer_trade_name_xpath, second_layer_product_description_text_xpath, second_layer_product_link_xpath)
     for second_layer_url in second_layer_urls[:3]:
         print second_layer_url
         content = http_processor.send_request(second_layer_url, 'text')
         #print content
+        second_layer_info_containing_nodes = get_all_same_type_nodes(content, second_layer_info_container_xpath)
+        node_list_processor(second_layer_info_containing_nodes, second_layer_info_processor)
+        
 
+        #for node in second_layer_info_containing_nodes:
+        #    print node
     
